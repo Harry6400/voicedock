@@ -1,0 +1,41 @@
+{
+  "name": "voicedock",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@10.9.8",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "node scripts/toolchain.mjs tauri",
+    "test": "vitest run",
+    "test:rust": "node scripts/toolchain.mjs cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "npm run build && npm test && npm run test:rust"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-autostart": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "lucide-react": "^0.468",
+    "motion": "^12",
+    "radix-ui": "^1.8.1",
+    "react": "^19",
+    "react-dom": "^19",
+    "tailwind-merge": "^3",
+    "tailwindcss": "^4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~5.8.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
