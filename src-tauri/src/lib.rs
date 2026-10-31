@@ -1,5 +1,6 @@
 mod files;
 mod model;
+mod panel;
 mod provider;
 mod subtitles;
 #[cfg(test)]
@@ -28,6 +29,7 @@ struct AppState {
     active: Mutex<Option<CancellationToken>>,
     pinned: AtomicBool,
     interacting: AtomicBool,
+    panel: panel::PanelState,
 }
 fn save(app: &tauri::AppHandle, data: &AppData) -> Result<(), String> {
     let store = app
@@ -184,7 +186,7 @@ fn register_shortcut(app: &tauri::AppHandle, value: &str) -> Result<(), String> 
     app.global_shortcut()
         .on_shortcut(shortcut, |app, _, event| {
             if event.state == ShortcutState::Pressed {
-                toggle(app, None);
+                toggle_panel(app);
             }
         })
         .map_err(|_| "快捷键被占用或无法注册，请选择其他组合。".to_string())
@@ -238,6 +240,12 @@ fn set_interacting(state: State<AppState>, value: bool) {
 }
 #[tauri::command]
 fn hide_panel(app: tauri::AppHandle) {
+    conceal_panel(&app);
+}
+fn conceal_panel(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.panel.invalidate();
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
@@ -486,48 +494,125 @@ fn reexport(
     )?;
     Ok(output.audio.to_string_lossy().into())
 }
-fn toggle(app: &tauri::AppHandle, anchor: Option<tauri::PhysicalPosition<f64>>) {
+fn toggle_panel(app: &tauri::AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
-    if w.is_visible().unwrap_or(false) {
-        let _ = w.hide();
-        return;
+    if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+        conceal_panel(app);
+    } else {
+        show_panel(app, None);
     }
-    // Use the tray/cursor monitor and the OS work area, including negative screen coordinates.
-    let pointer = anchor.or_else(|| w.cursor_position().ok());
-    let monitor = pointer
-        .and_then(|p| w.monitor_from_point(p.x, p.y).ok().flatten())
-        .or_else(|| w.current_monitor().ok().flatten());
+}
+fn show_panel(app: &tauri::AppHandle, anchor: Option<tauri::PhysicalPosition<f64>>) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Some(state) = app.try_state::<AppState>() {
+        state.panel.invalidate();
+    }
+    // macOS cursor positions use the primary display's physical scale. Work
+    // areas use each display's scale; normalize both to logical screen points.
+    // Avoid monitor_from_point here: its macOS backend compares with CGDisplay
+    // bounds in logical points despite the physical-position API surface.
+    let primary = w.primary_monitor().ok().flatten();
+    let primary_scale = primary.as_ref().map_or(1., |m| m.scale_factor());
+    let pointer = w
+        .cursor_position()
+        .ok()
+        .map(|p| p.to_logical::<f64>(primary_scale));
+    let monitor = w
+        .available_monitors()
+        .ok()
+        .and_then(|monitors| {
+            monitors.into_iter().find(|m| {
+                let Some(p) = pointer else { return false };
+                let origin = m.position().to_logical::<f64>(m.scale_factor());
+                let size = m.size().to_logical::<f64>(m.scale_factor());
+                p.x >= origin.x
+                    && p.x < origin.x + size.width
+                    && p.y >= origin.y
+                    && p.y < origin.y + size.height
+            })
+        })
+        .or_else(|| w.current_monitor().ok().flatten())
+        .or(primary);
     if let Some(m) = monitor {
-        let area = m.work_area();
-        let mut size = w.outer_size().unwrap_or(tauri::PhysicalSize::new(500, 690));
-        if size.width > area.size.width || size.height > area.size.height {
-            size = tauri::PhysicalSize::new(
-                size.width.min(area.size.width),
-                size.height.min(area.size.height),
+        let area_position = m.work_area().position.to_logical::<f64>(m.scale_factor());
+        let area_size = m.work_area().size.to_logical::<f64>(m.scale_factor());
+        let window_scale = w.scale_factor().unwrap_or(m.scale_factor());
+        let mut size = w
+            .outer_size()
+            .map(|s| s.to_logical::<f64>(window_scale))
+            .unwrap_or(tauri::LogicalSize::new(500., 690.));
+        if size.width > area_size.width || size.height > area_size.height {
+            size = tauri::LogicalSize::new(
+                size.width.min(area_size.width),
+                size.height.min(area_size.height),
             );
             let _ = w.set_size(size);
         }
-        let max_x = area.position.x + (area.size.width.saturating_sub(size.width)) as i32;
-        let max_y = area.position.y + (area.size.height.saturating_sub(size.height)) as i32;
-        let x = pointer
-            .map(|p| p.x as i32 - size.width as i32 / 2)
-            .unwrap_or(max_x)
-            .clamp(area.position.x, max_x);
-        let y = anchor
-            .map(|p| p.y as i32 + 12)
-            .unwrap_or(area.position.y + 12)
-            .clamp(area.position.y, max_y);
-        let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+        let wanted_x = pointer
+            .map(|p| p.x - size.width / 2.)
+            .unwrap_or(area_position.x + (area_size.width - size.width) / 2.);
+        let wanted_y = if anchor.is_some() {
+            pointer.map_or(area_position.y + 12., |p| p.y + 12.)
+        } else {
+            area_position.y + 12.
+        };
+        let (x, y) = panel::clamped_origin(
+            (
+                area_position.x,
+                area_position.y,
+                area_size.width,
+                area_size.height,
+            ),
+            (size.width, size.height),
+            (wanted_x, wanted_y),
+        );
+        let _ = w.set_position(tauri::LogicalPosition::new(x, y));
     }
+    // Showing a window does not unhide its accessory application on macOS.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    let _ = w.unminimize();
     let _ = w.show();
     let _ = w.set_focus();
+}
+
+fn defer_auto_hide(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let revision = state.panel.invalidate();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Let the native status-bar/menu focus handoff finish, then inspect the
+        // actual current focus instead of acting on a possibly stale event.
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let Some(state) = handle.try_state::<AppState>() else {
+                return;
+            };
+            if !state.panel.is_current(revision)
+                || state.pinned.load(Ordering::SeqCst)
+                || state.interacting.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            if let Some(w) = handle.get_webview_window("main") {
+                if w.is_visible().unwrap_or(false) && !w.is_focused().unwrap_or(true) {
+                    conceal_panel(&handle);
+                }
+            }
+        });
+    });
 }
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            toggle(app, None);
+            show_panel(app, None);
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -560,8 +645,9 @@ pub fn run() {
                 active: Mutex::new(None),
                 pinned: AtomicBool::new(false),
                 interacting: AtomicBool::new(false),
+                panel: panel::PanelState::default(),
             });
-            let open = MenuItem::with_id(app, "open", "打开 / 收起 VoiceDock", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "打开 VoiceDock", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出 VoiceDock", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &settings, &quit])?;
@@ -575,25 +661,41 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
-                    "open" => toggle(app, None),
+                    "open" => show_panel(app, None),
                     "settings" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                            let _ = app.emit("open-settings", ());
-                        }
+                        show_panel(app, None);
+                        let _ = app.emit("open-settings", ());
                     }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
+                        button_state,
                         position,
                         ..
                     } = event
                     {
-                        toggle(tray.app_handle(), Some(position));
+                        let app = tray.app_handle();
+                        let state = app.state::<AppState>();
+                        match button_state {
+                            MouseButtonState::Down => {
+                                let visible = app
+                                    .get_webview_window("main")
+                                    .is_some_and(|w| w.is_visible().unwrap_or(false));
+                                state.panel.tray_pressed(visible);
+                            }
+                            MouseButtonState::Up => {
+                                let visible = app
+                                    .get_webview_window("main")
+                                    .is_some_and(|w| w.is_visible().unwrap_or(false));
+                                if state.panel.tray_released_should_hide(visible) {
+                                    conceal_panel(app);
+                                } else {
+                                    show_panel(app, Some(position));
+                                }
+                            }
+                        }
                     }
                 })
                 .build(app)?;
@@ -602,14 +704,15 @@ pub fn run() {
         .on_window_event(|w, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = w.hide();
+                conceal_panel(w.app_handle());
+            }
+            tauri::WindowEvent::Focused(true) => {
+                if let Some(s) = w.try_state::<AppState>() {
+                    s.panel.invalidate();
+                }
             }
             tauri::WindowEvent::Focused(false) => {
-                if let Some(s) = w.try_state::<AppState>() {
-                    if !s.pinned.load(Ordering::SeqCst) && !s.interacting.load(Ordering::SeqCst) {
-                        let _ = w.hide();
-                    }
-                }
+                defer_auto_hide(w.app_handle());
             }
             _ => {}
         })
@@ -629,6 +732,14 @@ pub fn run() {
             reveal_audio,
             reexport
         ])
-        .run(tauri::generate_context!())
-        .expect("VoiceDock could not start");
+        .build(tauri::generate_context!())
+        .expect("VoiceDock could not start")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_panel(app, None);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

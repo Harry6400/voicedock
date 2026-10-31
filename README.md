@@ -12,7 +12,7 @@ macOS 菜单栏里的 AI 配音工作台。打开小面板、写台词、选音�
 
 ```text
 src-tauri/target/release/bundle/macos/VoiceDock.app
-src-tauri/target/release/bundle/dmg/VoiceDock_0.1.0_aarch64.dmg
+src-tauri/target/release/bundle/dmg/VoiceDock_0.1.1_aarch64.dmg
 ```
 
 1. 打开设置，保存自己的 Fish Audio API Key。Key 仅保存在系统安全存储，界面不会回显已有 Key。「已保存」表示凭据已保存，不代表网络已通过验证。
