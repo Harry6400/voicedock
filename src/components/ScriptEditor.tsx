@@ -105,7 +105,6 @@ export default function ScriptEditor({
             {label}
           </Button>
         ))}
-        <span className="autosave">自动保存草稿</span>
       </div>
     </section>
   );

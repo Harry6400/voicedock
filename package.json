@@ -1,7 +1,7 @@
 {
   "name": "voicedock",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "packageManager": "npm@10.9.8",
   "scripts": {

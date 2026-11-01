@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -9,9 +9,12 @@ import {
   Star,
   Pencil,
   Trash2,
+  Download,
+  AudioLines,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +29,7 @@ import {
   EmptyHeader,
   EmptyTitle,
   EmptyDescription,
+  EmptyMedia,
 } from "@/components/ui/empty";
 import type { Voice } from "@/types";
 import { call } from "@/lib/api";
@@ -62,6 +66,8 @@ export default function VoiceLibrary({
   const [isNew, setIsNew] = useState(false);
   const [removing, setRemoving] = useState<Voice | null>(null);
   const [importing, setImporting] = useState(false);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const addTrigger = useRef<HTMLButtonElement>(null);
   async function importVoices() {
     setImporting(true);
     try {
@@ -121,11 +127,13 @@ export default function VoiceLibrary({
       <div className="page-heading">
         <div>
           <h2>音色资料库</h2>
-          <p>让每一个角色，都有自己的名字。</p>
+          <p>管理本地别名、收藏与试听短句。</p>
         </div>
         <Button
+          ref={addTrigger}
           size="sm"
           onClick={() => {
+            returnFocus.current = addTrigger.current;
             setIsNew(true);
             setEditing({ ...blank });
           }}
@@ -155,11 +163,12 @@ export default function VoiceLibrary({
         </Button>
       </div>
       <Button
-        variant="ghost"
-        size="xs"
+        variant="outline"
+        size="sm"
         disabled={importing || busy}
         onClick={() => void importVoices()}
       >
+        <Download data-icon="inline-start" />
         {importing ? "正在读取账号音色…" : "从 Fish 账号导入音色"}
       </Button>
       <div className="voice-list">
@@ -182,12 +191,18 @@ export default function VoiceLibrary({
                 onClick={() => onSelect(v.id)}
               >
                 {v.name}
-                {selected === v.id && <span className="selected-dot" />}
+                {selected === v.id && <Badge variant="secondary">当前</Badge>}
               </button>
-              <p>
-                {v.description || "Fish Audio"}
-                {v.tags.length > 0 && ` · ${v.tags.join(" / ")}`}
-              </p>
+              <p>{v.description || "Fish Audio"}</p>
+              {v.tags.length > 0 && (
+                <div className="voice-tags">
+                  {Array.from(new Set(v.tags)).map((tag) => (
+                    <Badge key={tag} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
               <button
                 className="voice-id text-button"
                 title="复制原始 Voice ID"
@@ -215,7 +230,8 @@ export default function VoiceLibrary({
                   variant="ghost"
                   size="icon-xs"
                   aria-label={`编辑 ${v.name}`}
-                  onClick={() => {
+                  onClick={(event) => {
+                    returnFocus.current = event.currentTarget;
                     setIsNew(false);
                     setEditing({ ...v });
                   }}
@@ -244,7 +260,10 @@ export default function VoiceLibrary({
                   variant="ghost"
                   size="icon-xs"
                   aria-label={`删除 ${v.name}`}
-                  onClick={() => setRemoving(v)}
+                  onClick={(event) => {
+                    returnFocus.current = event.currentTarget;
+                    setRemoving(v);
+                  }}
                 >
                   <Trash2 />
                 </Button>
@@ -271,6 +290,9 @@ export default function VoiceLibrary({
       {!filtered.length && (
         <Empty>
           <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <AudioLines />
+            </EmptyMedia>
             <EmptyTitle>
               {voices.length ? "没有找到音色" : "添加你的第一个声音"}
             </EmptyTitle>
@@ -283,7 +305,13 @@ export default function VoiceLibrary({
         </Empty>
       )}
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target = returnFocus.current;
+            (target?.isConnected ? target : addTrigger.current)?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{isNew ? "添加音色" : "编辑音色"}</DialogTitle>
             <DialogDescription>
@@ -360,7 +388,13 @@ export default function VoiceLibrary({
         </DialogContent>
       </Dialog>
       <Dialog open={!!removing} onOpenChange={(v) => !v && setRemoving(null)}>
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target = returnFocus.current;
+            (target?.isConnected ? target : addTrigger.current)?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>删除「{removing?.name}」？</DialogTitle>
             <DialogDescription>

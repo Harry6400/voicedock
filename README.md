@@ -4,6 +4,8 @@ macOS 菜单栏里的 AI 配音工作台。打开小面板、写台词、选音�
 
 使用 **Tauri 2 + Rust + React + TypeScript**，首个服务商为 Fish Audio 原生 REST API。默认模型固定为 `s2.1-pro-free`，不自动切换付费模型。
 
+v0.1.2 采用聚焦编辑布局：台词区域随窗口伸展，输出与生成操作固定在底部；音色库、历史、设置与播放器使用统一的明暗主题。高级参数从主界面「高级」打开，原有配音功能和资料库格式保持兼容。
+
 ## 安装与首次使用
 
 面向 Apple Silicon Mac，最低系统版本 macOS 12。下载本仓库 Releases 中的 `.dmg`，将 `VoiceDock.app` 拖到「应用程序」，然后打开。当前构建没有 Apple Developer ID 签名和公证；如 macOS 阻止打开，请在「系统设置 → 隐私与安全性」中检查来源后允许本应用。
@@ -12,7 +14,7 @@ macOS 菜单栏里的 AI 配音工作台。打开小面板、写台词、选音�
 
 ```text
 src-tauri/target/release/bundle/macos/VoiceDock.app
-src-tauri/target/release/bundle/dmg/VoiceDock_0.1.1_aarch64.dmg
+src-tauri/target/release/bundle/dmg/VoiceDock_0.1.2_aarch64.dmg
 ```
 
 1. 打开设置，保存自己的 Fish Audio API Key。Key 仅保存在系统安全存储，界面不会回显已有 Key。「已保存」表示凭据已保存，不代表网络已通过验证。

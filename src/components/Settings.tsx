@@ -79,13 +79,13 @@ export default function Settings({
       <div className="page-heading">
         <div>
           <h2>设置</h2>
-          <p>准备好声音，随时开始创作。</p>
+          <p>配置服务、文件输出和系统行为。</p>
         </div>
       </div>
       <section className="settings-section">
         <h3>
           <KeyRound />
-          Fish Audio
+          服务凭据
         </h3>
         <FieldGroup>
           <Field>
@@ -131,13 +131,14 @@ export default function Settings({
         </FieldGroup>
       </section>
       <section className="settings-section">
-        <h3>文件与网络</h3>
+        <h3>文件输出</h3>
         <FieldGroup>
           <Field>
             <FieldLabel>默认保存目录</FieldLabel>
             <Button
               variant="outline"
               className="directory-button"
+              title={dir || "选择默认保存目录"}
               onClick={() =>
                 void chooseDirectory()
                   .then((p) => p && setDir(p))
@@ -159,6 +160,11 @@ export default function Settings({
               支持 {"{date}"}、{"{voice}"}、{"{title}"}；同名文件自动递增。
             </FieldDescription>
           </Field>
+        </FieldGroup>
+      </section>
+      <section className="settings-section">
+        <h3>网络</h3>
+        <FieldGroup>
           <Field>
             <FieldLabel htmlFor="proxy">手动代理（可选）</FieldLabel>
             <Input
@@ -205,14 +211,16 @@ export default function Settings({
           </Field>
         </FieldGroup>
       </section>
-      <Button onClick={() => void save()} disabled={saving}>
-        {saving ? "正在保存…" : "保存设置"}
-      </Button>
       <p className="settings-footnote">
         ⌘↵ 生成配音　⌘, 设置　Esc 收起面板
         <br />
         免费模型不可用时会提示，绝不静默切换付费模型。
       </p>
+      <div className="settings-savebar">
+        <Button onClick={() => void save()} disabled={saving}>
+          {saving ? "正在保存…" : "保存设置"}
+        </Button>
+      </div>
     </div>
   );
 }

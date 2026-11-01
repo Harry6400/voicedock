@@ -7,22 +7,16 @@ import {
   Settings2,
   History,
   Minus,
-  ChevronDown,
   Headphones,
   Plus,
-  FolderOpen,
-  Sparkles,
-  Square,
   X,
   Search,
   Star,
   Check,
   ArrowLeft,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -31,19 +25,18 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import {
   Empty,
   EmptyHeader,
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
-import ScriptEditor from "@/components/ScriptEditor";
+import ComposePanel from "@/components/ComposePanel";
+import HistoryView from "@/components/HistoryView";
 import VoiceLibrary from "@/components/VoiceLibrary";
 import Settings from "@/components/Settings";
-import Player from "@/components/Player";
 import {
   call,
   chooseDirectory,
@@ -52,8 +45,7 @@ import {
   persist,
   synthesize,
 } from "@/lib/api";
-import { cleanText, durationLabel } from "@/lib/text";
-import { emptyWorkspace, models } from "@/types";
+import { emptyWorkspace } from "@/types";
 import type { Options, Voice, VoiceRecord, Workspace } from "@/types";
 type View = "compose" | "voices" | "history" | "settings";
 interface Job {
@@ -85,6 +77,7 @@ export default function App() {
     (s: string) => setMessage(s.replace(/^Error: /, "")),
     [],
   );
+  const dialogReturnFocus = useRef<HTMLElement | null>(null);
   const dataRef = useRef(data);
   const busyRef = useRef(false);
   const generationRef = useRef<() => void>(() => {});
@@ -92,7 +85,13 @@ export default function App() {
     dataRef.current = data;
   }, [data]);
   const o = data.options;
-  const selected = data.voices.find((v) => v.id === o.voiceId);
+  const matchingVoices = data.voices.filter(
+    (voice) =>
+      (!onlyFavorites || voice.favorite) &&
+      `${voice.name} ${voice.id} ${voice.tags}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
   const update = useCallback((patch: Partial<Workspace>) => {
     setSaved(false);
     setData((d) => ({ ...d, ...patch }));
@@ -231,6 +230,7 @@ export default function App() {
       return;
     }
     if (job.options.model !== "s2.1-pro-free") {
+      dialogReturnFocus.current = document.activeElement as HTMLElement | null;
       setPaid(job);
       return;
     }
@@ -368,7 +368,13 @@ export default function App() {
           </Button>
         </div>
       )}
-      <div className="workspace-scroll">
+      <div
+        className={
+          view === "compose"
+            ? "workspace-scroll workspace-compose"
+            : "workspace-scroll"
+        }
+      >
         <AnimatePresence mode="wait" initial={false}>
           <m.div
             key={view}
@@ -376,289 +382,41 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -3 }}
             transition={{ duration: 0.16 }}
-            className="view-content"
+            className={
+              view === "compose" ? "view-content compose-view" : "view-content"
+            }
           >
             {view === "compose" && (
-              <div className="compose">
-                <section className="voice-section">
-                  <div className="section-heading">
-                    <span>配音音色</span>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => setView("voices")}
-                    >
-                      管理音色
-                    </Button>
-                  </div>
-                  <div className="current-voice">
-                    <button
-                      className="voice-select"
-                      onClick={() => {
-                        setSearch("");
-                        setChooser(true);
-                      }}
-                      aria-label="选择配音音色"
-                    >
-                      <span className="voice-avatar">
-                        {selected?.name.slice(0, 1) || <AudioLines />}
-                      </span>
-                      <span>
-                        <strong>{selected?.name || "选择一个声音"}</strong>
-                        <small title={selected?.id}>
-                          {selected?.description ||
-                            (selected
-                              ? "Fish Audio · " + selected.id.slice(0, 12) + "…"
-                              : "添加 Voice ID，给声音起个名字")}
-                        </small>
-                      </span>
-                      <ChevronDown />
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="试听当前音色"
-                      disabled={!selected || busy}
-                      onClick={() => selected && preview(selected)}
-                    >
-                      <Headphones />
-                    </Button>
-                  </div>
-                </section>
-                <ScriptEditor
-                  text={data.draft}
-                  onChange={(draft) => update({ draft })}
-                  preview={captionPreview}
-                  onPreview={setCaptionPreview}
-                />
-                <FieldGroup className="quick-controls">
-                  <Field>
-                    <FieldLabel htmlFor="model">模型</FieldLabel>
-                    <select
-                      id="model"
-                      aria-label="模型"
-                      value={o.model}
-                      onChange={(e) => option({ model: e.target.value })}
-                    >
-                      {models.map((m) => (
-                        <option key={m} value={m}>
-                          {m === "s2.1-pro-free"
-                            ? "S2.1 Pro · 免费"
-                            : m + " · 付费"}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="speed">
-                      语速 <span className="muted">{o.speed.toFixed(1)}×</span>
-                    </FieldLabel>
-                    <input
-                      id="speed"
-                      aria-label="语速"
-                      type="range"
-                      min="0.5"
-                      max="2"
-                      step="0.1"
-                      value={o.speed}
-                      onChange={(e) =>
-                        option({ speed: Number(e.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="format">格式</FieldLabel>
-                    <select
-                      id="format"
-                      aria-label="音频格式"
-                      value={o.format}
-                      onChange={(e) =>
-                        option({ format: e.target.value as Options["format"] })
-                      }
-                    >
-                      <option value="mp3">MP3</option>
-                      <option value="wav">WAV</option>
-                      <option value="opus">Opus</option>
-                    </select>
-                  </Field>
-                </FieldGroup>
-                {o.model !== "s2.1-pro-free" && (
-                  <p className="paid-note">
-                    已选付费模型。每次调用前需要确认计费。
-                  </p>
-                )}
-                <div className="directory-row">
-                  <FolderOpen />
-                  <button
-                    className="text-button"
-                    title={o.outputDir}
-                    onClick={() => void choose()}
-                  >
-                    {o.outputDir?.split("/").pop() || "选择保存目录"}
-                  </button>
-                  <span>保存到</span>
-                  <details className="advanced">
-                    <summary aria-label="高级参数">
-                      <SlidersHorizontal />
-                      高级
-                    </summary>
-                    <div className="advanced-content">
-                      <FieldGroup>
-                        <Field>
-                          <FieldLabel htmlFor="filename">
-                            本次文件名（留空按规则）
-                          </FieldLabel>
-                          <Input
-                            id="filename"
-                            value={filename}
-                            onChange={(e) => setFilename(e.target.value)}
-                            placeholder="例如：开场旁白"
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="latency">延迟模式</FieldLabel>
-                          <select
-                            id="latency"
-                            aria-label="延迟模式"
-                            value={o.latency}
-                            onChange={(e) =>
-                              option({ latency: e.target.value })
-                            }
-                          >
-                            <option value="normal">正常 · 优先质量</option>
-                            <option value="balanced">平衡</option>
-                            <option value="low">低延迟</option>
-                          </select>
-                        </Field>
-                        <Field orientation="horizontal">
-                          <FieldLabel htmlFor="normalize">
-                            规范化数字和单位
-                          </FieldLabel>
-                          <Switch
-                            id="normalize"
-                            checked={o.normalize}
-                            onCheckedChange={(v) => option({ normalize: v })}
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="temperature">
-                            表现力 {o.temperature.toFixed(2)}
-                          </FieldLabel>
-                          <input
-                            id="temperature"
-                            aria-label="表现力"
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={o.temperature}
-                            onChange={(e) =>
-                              option({ temperature: Number(e.target.value) })
-                            }
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="top-p">
-                            多样性 {o.topP.toFixed(2)}
-                          </FieldLabel>
-                          <input
-                            id="top-p"
-                            aria-label="多样性"
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={o.topP}
-                            onChange={(e) =>
-                              option({ topP: Number(e.target.value) })
-                            }
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="presets">配音预设</FieldLabel>
-                          <select
-                            id="presets"
-                            aria-label="配音预设"
-                            defaultValue=""
-                            onChange={(e) => {
-                              const p = data.presets.find(
-                                (p) => p.name === e.target.value,
-                              );
-                              if (p) option(p.options);
-                              e.target.value = "";
-                            }}
-                          >
-                            <option value="">载入预设…</option>
-                            {data.presets.map((p) => (
-                              <option key={p.name}>{p.name}</option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPresetDialog(true)}
-                        >
-                          <Plus data-icon="inline-start" />
-                          将当前配置保存为预设
-                        </Button>
-                      </FieldGroup>
-                    </div>
-                  </details>
-                </div>
-                {data.draft.length > 5000 && (
-                  <p className="muted long-text-note">
-                    长文本将整篇发送一次，服务端可内部分块。实际限额以 Fish
-                    账户为准；本应用上限 50,000 字。
-                  </p>
-                )}
-                <div className="generate-area">
-                  <div className="subtitle-toggle">
-                    <div>
-                      <label htmlFor="subtitles">同时生成字幕</label>
-                      <span>音频 + SRT + 干净台词</span>
-                    </div>
-                    <Switch
-                      id="subtitles"
-                      checked={o.subtitles}
-                      onCheckedChange={(v) => option({ subtitles: v })}
-                    />
-                  </div>
-                  {busy ? (
-                    <Button
-                      className="generate-button"
-                      variant="secondary"
-                      onClick={() =>
-                        void call("cancel_generation").catch((e) =>
-                          notify(String(e)),
-                        )
-                      }
-                    >
-                      <Square data-icon="inline-start" />
-                      取消合成
-                    </Button>
-                  ) : (
-                    <Button
-                      className="generate-button"
-                      onClick={generate}
-                      disabled={!ready}
-                    >
-                      <Sparkles data-icon="inline-start" />
-                      生成配音<kbd>⌘ ↵</kbd>
-                    </Button>
-                  )}
-                  <div className="generation-status" aria-live="polite">
-                    {busy
-                      ? status
-                      : o.subtitles
-                        ? "使用同一次合成的真实时间戳，不额外生成音频。"
-                        : "仅生成音频和干净台词。"}
-                  </div>
-                </div>
-                {result && (
-                  <Player key={result.id} record={result} notify={notify} />
-                )}
-              </div>
+              <ComposePanel
+                data={data}
+                ready={ready}
+                busy={busy}
+                status={status}
+                captionPreview={captionPreview}
+                onCaptionPreview={setCaptionPreview}
+                filename={filename}
+                onFilename={setFilename}
+                result={result}
+                notify={notify}
+                onDraft={(draft) => update({ draft })}
+                onOption={option}
+                onChooseVoice={(trigger) => {
+                  dialogReturnFocus.current = trigger;
+                  setSearch("");
+                  setChooser(true);
+                }}
+                onManageVoice={() => setView("voices")}
+                onPreview={preview}
+                onChooseDirectory={() => void choose()}
+                onGenerate={generate}
+                onCancel={() =>
+                  void call("cancel_generation").catch((e) => notify(String(e)))
+                }
+                onPreset={(trigger) => {
+                  dialogReturnFocus.current = trigger;
+                  setPresetDialog(true);
+                }}
+              />
             )}
             {view === "voices" && (
               <VoiceLibrary
@@ -687,69 +445,17 @@ export default function App() {
               />
             )}
             {view === "history" && (
-              <div className="subpage">
-                <div className="page-heading">
-                  <div>
-                    <h2>生成历史</h2>
-                    <p>最近 {data.history.length} 次声音，随时回到创作。</p>
-                  </div>
-                </div>
-                {!data.history.length && (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyTitle>第一段声音，还在等你</EmptyTitle>
-                      <EmptyDescription>
-                        生成后的音频、字幕路径与原始台词会记录在这里。
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                )}
-                {data.history.map((r) => (
-                  <article className="history-row" key={r.id}>
-                    <div className="history-meta">
-                      <strong>{r.voiceName}</strong>
-                      <span>
-                        {new Date(r.createdAt).toLocaleString("zh-CN", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <p>{cleanText(r.text).slice(0, 110)}</p>
-                    <div className="history-details">
-                      <span>
-                        {r.model} · {durationLabel(r.duration)}
-                      </span>
-                      {r.srtPath && <Badge variant="secondary">SRT</Badge>}
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          update({ draft: r.text });
-                          setView("compose");
-                        }}
-                      >
-                        载入台词
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() =>
-                          setResult(result?.id === r.id ? null : r)
-                        }
-                      >
-                        {" "}
-                        {result?.id === r.id ? "收起" : "播放 / 导出"}
-                      </Button>
-                    </div>
-                    {result?.id === r.id && (
-                      <Player record={r} notify={notify} />
-                    )}
-                  </article>
-                ))}
-              </div>
+              <HistoryView
+                history={data.history}
+                result={result}
+                onResult={setResult}
+                onLoad={(draft) => {
+                  update({ draft });
+                  setView("compose");
+                }}
+                onCompose={() => setView("compose")}
+                notify={notify}
+              />
             )}
           </m.div>
         </AnimatePresence>
@@ -763,11 +469,17 @@ export default function App() {
         <span>⌥ ⌘ G</span>
       </footer>
       <Dialog open={chooser} onOpenChange={setChooser}>
-        <DialogContent className="voice-chooser">
+        <DialogContent
+          className="voice-chooser"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            dialogReturnFocus.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>选择声音</DialogTitle>
             <DialogDescription>
-              搜索本地音色，原始 Voice ID 始终独立保存。
+              搜索别名、标签或 Voice ID，选择后返回台词编辑。
             </DialogDescription>
           </DialogHeader>
           <div className="search-row">
@@ -791,40 +503,46 @@ export default function App() {
             </Button>
           </div>
           <div className="chooser-list">
-            {data.voices
-              .filter(
-                (v) =>
-                  (!onlyFavorites || v.favorite) &&
-                  `${v.name} ${v.id} ${v.tags}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-              )
-              .map((v) => (
-                <div className="chooser-row" key={v.id}>
-                  <button
-                    onClick={() => {
-                      option({ voiceId: v.id });
-                      setChooser(false);
-                    }}
-                  >
-                    <span className="voice-avatar">{v.name.slice(0, 1)}</span>
-                    <span>
-                      <strong>{v.name}</strong>
-                      <small>{v.id}</small>
-                    </span>
-                    {v.id === o.voiceId && <Check />}
-                  </button>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`试听 ${v.name}`}
-                    disabled={busy}
-                    onClick={() => preview(v)}
-                  >
-                    <Headphones />
-                  </Button>
-                </div>
-              ))}
+            {!matchingVoices.length && (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>
+                    {data.voices.length ? "没有找到音色" : "还没有添加音色"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {data.voices.length
+                      ? "换个关键词，或关闭收藏筛选。"
+                      : "添加 Fish Audio Voice ID，为它起一个中文别名。"}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+            {matchingVoices.map((v) => (
+              <div className="chooser-row" key={v.id}>
+                <button
+                  onClick={() => {
+                    option({ voiceId: v.id });
+                    setChooser(false);
+                  }}
+                >
+                  <span className="voice-avatar">{v.name.slice(0, 1)}</span>
+                  <span>
+                    <strong>{v.name}</strong>
+                    <small>{v.id}</small>
+                  </span>
+                  {v.id === o.voiceId && <Check />}
+                </button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`试听 ${v.name}`}
+                  disabled={busy}
+                  onClick={() => preview(v)}
+                >
+                  <Headphones />
+                </Button>
+              </div>
+            ))}
           </div>
           <Button
             variant="outline"
@@ -839,7 +557,12 @@ export default function App() {
         </DialogContent>
       </Dialog>
       <Dialog open={!!paid} onOpenChange={(v) => !v && setPaid(null)}>
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            dialogReturnFocus.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>确认调用付费模型</DialogTitle>
             <DialogDescription>
@@ -868,7 +591,12 @@ export default function App() {
         </DialogContent>
       </Dialog>
       <Dialog open={presetDialog} onOpenChange={setPresetDialog}>
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            dialogReturnFocus.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>保存配音预设</DialogTitle>
             <DialogDescription>

@@ -70,11 +70,15 @@ export default function Player({
         </span>
         <span>{record.format.toUpperCase()}</span>
       </div>
+      <div className="player-file" title={record.audioPath}>
+        {record.audioPath.split("/").pop()}
+      </div>
       <div className="playback">
         <Button
           variant="secondary"
           size="icon"
           aria-label={playing ? "暂停" : "播放"}
+          title={url ? (playing ? "暂停" : "播放") : "正在载入音频…"}
           disabled={!url}
           onClick={() => void play()}
         >
@@ -87,6 +91,8 @@ export default function Player({
           <input
             id={`seek-${record.id}`}
             type="range"
+            aria-label="播放进度"
+            disabled={!url}
             min={0}
             max={record.duration}
             step={0.01}
@@ -106,6 +112,7 @@ export default function Player({
           variant="ghost"
           size="icon-sm"
           aria-label="在 Finder 中显示"
+          title="在 Finder 中显示"
           onClick={() =>
             void call("reveal_audio", { path: record.audioPath }).catch((e) =>
               notify(String(e)),
@@ -119,6 +126,7 @@ export default function Player({
             variant="ghost"
             size="icon-sm"
             aria-label="再次导出"
+            title="再次导出"
             onClick={() => void exportAgain()}
           >
             <Download />
